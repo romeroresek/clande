@@ -1,0 +1,186 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture — Fecha 1 (auto desde Google Sheets)</title>
+  <style>
+    :root{
+      --bg:#0b0b10;
+      --card:#111522;
+      --muted:#9aa3b2;
+      --gold:#ffd84d;
+      --plata:#c0c8ff;
+      --bronce:#e7b26a;
+      --red:#b3242a;
+      --blue:#1c3f78;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:22px;background:linear-gradient(120deg,#0b0b10,#101629 65%,#0b0b10);
+      color:#eef2ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,'Helvetica Neue',Arial;line-height:1.45}
+    h1{margin:0 0 16px;font-size:32px;letter-spacing:.3px}
+    .hint{color:var(--muted);font-size:13px;margin-bottom:16px}
+    .cups{display:flex;flex-direction:column;gap:24px}
+    .cup{background:var(--card);border-radius:18px;padding:18px;border:1px solid rgba(255,255,255,.06);
+      box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03)}
+    .badge{display:inline-block;padding:6px 12px;border-radius:999px;font-size:12px;letter-spacing:.4px;text-transform:uppercase;
+      color:#0b0b10;font-weight:800;margin-bottom:14px}
+    .oro{background:var(--gold)} .plata{background:var(--plata)} .bronce{background:var(--bronce)}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:900px){.row{grid-template-columns:1fr}}
+    .team{border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+    .team header{padding:10px 14px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:rgba(0,0,0,.22);
+      display:flex;justify-content:space-between;gap:8px;font-size:13px}
+    .team.red header{background:linear-gradient(90deg,#a11e23,#b3242a)}
+    .team.blue header{background:linear-gradient(90deg,#16315f,#1c3f78)}
+    .body{padding:14px;background:rgba(255,255,255,.02)}
+    ul{list-style:none;margin:8px 0 0 0;padding:0}
+    li{padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
+    li:last-child{border-bottom:0}
+    .grid-title{margin:8px 0 0;font-size:16px;font-weight:800;letter-spacing:.3px}
+    .divider{height:1px;background:linear-gradient(90deg,rgba(255,255,255,.14),rgba(255,255,255,.04));margin:8px 0}
+    .cap{font-weight:800}
+    .err{background:#3e1d1f;border:1px solid #8d3036;padding:12px;border-radius:12px;color:#ffccd2;margin-top:16px}
+    .updated{color:var(--muted);font-size:12px;margin-top:6px}
+  </style>
+</head>
+<body>
+  <h1>Fecha 1</h1>
+  <div class="hint">Este HTML se actualiza leyendo el CSV público del Sheet. Solo refrescá la página tras editar la planilla.</div>
+  <div id="app" class="cups"></div>
+  <div id="error"></div>
+  <script>
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR0Lh3_IeTHRmIf0t6Cqlt7gR0znnH2-Cz_nzYOvooYhM8vAEHtFS6mjuHVROUojU6S-HYWOgtD-7P1/pub?output=csv';
+
+    // CSV parser (maneja comillas dobles)
+    function parseCSV(text){
+      const rows = [];
+      let cur = [''], inQuotes = false;
+      for(let i=0;i<text.length;i++){ 
+        const c = text[i], n = text[i+1];
+        if(c === '"'){ 
+          if(inQuotes && n === '"'){ cur[cur.length-1] += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if(c === ',' && !inQuotes) { 
+          cur.push(''); 
+        } else if(c === '\n' && !inQuotes) { 
+          rows.push(cur.map(s=>s.trim())); 
+          cur = ['']; 
+        } else { 
+          cur[cur.length-1] += c; 
+        }
+      }
+      if(cur.length && (cur.some(v=>v.length))) rows.push(cur.map(s=>s.trim()));
+      return rows;
+    }
+
+    // Detecta clase (oro/plata/bronce) según título
+    function cupClass(title){
+      title = (title||'').toLowerCase();
+      if(title.includes('oro')) return 'oro';
+      if(title.includes('plata')) return 'plata';
+      if(title.includes('bronce')) return 'bronce';
+      return '';
+    }
+
+    // Convierte líneas de un equipo a estructura (cap, singles, dobles)
+    function parseTeam(lines){
+      const res = {cap:'', singles:[], dobles:[]};
+      let section = 'singles'; // por defecto
+      for(const L of lines){
+        if(!L) continue;
+        const t = L.toLowerCase();
+        if(t.startsWith('cap')){ res.cap = L.split(':').slice(1).join(':').trim() || L.trim(); continue; }
+        if(t.startsWith('singles')){ section = 'singles'; continue; }
+        if(t.startsWith('dobles')){ section = 'dobles'; continue; }
+        if(section === 'singles') res.singles.push(L);
+        else res.dobles.push(L);
+      }
+      return res;
+    }
+
+    function buildCup(title, leftLines, rightLines){
+      const teamA = parseTeam(leftLines);
+      const teamB = parseTeam(rightLines);
+      const cup = document.createElement('section');
+      cup.className = 'cup';
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + cupClass(title);
+      badge.textContent = title || 'Copa';
+      cup.appendChild(badge);
+
+      const row = document.createElement('div'); row.className = 'row';
+
+      function teamCard(team, color){
+        const el = document.createElement('article'); el.className = 'team ' + color;
+        const h = document.createElement('header');
+        const name = document.createElement('div'); name.textContent = color === 'red' ? 'Equipo A' : 'Equipo B';
+        const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = (team.cap ? 'Cap: ' + team.cap : '');
+        h.appendChild(name); h.appendChild(cap); el.appendChild(h);
+
+        const b = document.createElement('div'); b.className = 'body';
+        const sH = document.createElement('div'); sH.className = 'grid-title'; sH.textContent = 'Singles';
+        const sU = document.createElement('ul');
+        (team.singles.length ? team.singles : []).forEach(x=>{ const li = document.createElement('li'); li.textContent = x; sU.appendChild(li); });
+        b.appendChild(sH); b.appendChild(sU);
+        const div = document.createElement('div'); div.className = 'divider'; b.appendChild(div);
+        const dH = document.createElement('div'); dH.className = 'grid-title'; dH.textContent = 'Dobles';
+        const dU = document.createElement('ul');
+        (team.dobles.length ? team.dobles : []).forEach(x=>{ const li = document.createElement('li'); li.textContent = x; dU.appendChild(li); });
+        b.appendChild(dH); b.appendChild(dU);
+        el.appendChild(b);
+        return el;
+      }
+
+      row.appendChild(teamCard(teamA,'red'));
+      row.appendChild(teamCard(teamB,'blue'));
+      cup.appendChild(row);
+      return cup;
+    }
+
+    function render(rows){
+      // Eliminamos encabezados en blanco y 'Fecha...'
+      rows = rows.filter(r => r.some(c => c && c.trim().length));
+      rows = rows.filter(r => !(r[0]||'').toLowerCase().startsWith('fecha'));
+      const app = document.getElementById('app'); app.innerHTML='';
+
+      let i=0;
+      while(i < rows.length){
+        // Buscar fila con 'Copa ...'
+        while(i < rows.length && !((rows[i][0]||'').toLowerCase().includes('copa'))) i++;
+        if(i >= rows.length) break;
+        const title = rows[i][0];
+        i++;
+
+        const leftLines = [], rightLines = [];
+        // Acumular hasta la siguiente 'Copa' o fin
+        while(i < rows.length && !((rows[i][0]||'').toLowerCase().includes('copa'))){
+          const L = (rows[i][0]||'').trim();
+          const R = (rows[i][2]||'').trim(); // col C (A,B vacío como separador)
+          if(L) leftLines.push(L);
+          if(R) rightLines.push(R);
+          i++;
+        }
+        app.appendChild(buildCup(title,leftLines,rightLines));
+      }
+      const upd = document.createElement('div');
+      upd.className = 'updated';
+      upd.textContent = 'Actualizado: ' + new Date().toLocaleString();
+      app.appendChild(upd);
+    }
+
+    async function main(){
+      try{
+        const res = await fetch(CSV_URL, {cache:'no-store'});
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+        render(parseCSV(text));
+      }catch(e){
+        document.getElementById('error').innerHTML = '<div class="err">No pude leer el CSV ('+e.message+'). Verificá que el enlace esté "publicado" y accesible.</div>';
+      }
+    }
+    main();
+  </script>
+</body>
+</html>
